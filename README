@@ -1,0 +1,24 @@
+ethspray [-v] rx|tx DEV:MAC [DEV:MAC]*
+ -v              be verbose (also keeps process in foreground)
+ -r --rate       packets per second [10]
+ -l --loss N     packet loss trigger level [3]
+ -R --rtime N    recoverytime in seconds after reconnect until recovered [200]
+ -F              stay in foreground (no daemon)
+ -e --exec PRG   run this program to handle events
+
+Ethspray has two modes: 'rx' and 'tx'
+
+rx mode is the receiver mode.
+The receiver will expect packets from the MAC-addresses listed.
+If sequential packet loss is detected the alarm function will trigger.
+
+tx mode is the transmitter mode.
+The transmitter will send packets to all MAC-addresses listed at the given rate.
+
+Exec program:
+The program/script given to the '-e' switch receives event information in argv.
+ $1 = MAC
+ $2 = RESET|FAIL|RECONNECT|RECOVER|LOSS
+      RESET is sent at program startup.
+ $3 = HH:MM:SS.ms
+ $4 = (LOSS PERCENTAGE)
