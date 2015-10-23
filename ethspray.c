@@ -576,7 +576,24 @@ int main(int argc, char **argv)
 			}
 			if(conf.verbose > 2) printf("bound to ifindex %d\n", mac->addr.sll_ifindex);
 		}
-		if((!conf.verbose) && (!conf.foreground)) daemonize();
+		if(!conf.verbose) {
+			if(conf.foreground) {
+				int fd;
+				umask(0);
+				if ((chdir("/")) < 0)
+					exit(-1);
+				if((fd = open("/dev/null", O_RDWR, 0)) >= 0) {
+					if(fd>2) {
+						dup2(fd, 0);
+						dup2(fd, 1);
+						dup2(fd, 2);
+					}
+					if(fd) close(fd);
+				}
+			} else {
+				daemonize();
+			}
+		}
 		opensyslog();
 		receiver(macs);
 		exit(1);
@@ -587,7 +604,24 @@ int main(int argc, char **argv)
 			fprintf(stderr, "ethspray: PACKET socket creation failed\n");
 			exit(2);
 		}
-		if((!conf.verbose) && (!conf.foreground)) daemonize();
+		if(!conf.verbose) {
+			if(conf.foreground) {
+				int fd;
+				umask(0);
+				if ((chdir("/")) < 0)
+					exit(-1);
+				if((fd = open("/dev/null", O_RDWR, 0)) >= 0) {
+					if(fd>2) {
+						dup2(fd, 0);
+						dup2(fd, 1);
+						dup2(fd, 2);
+					}
+					if(fd) close(fd);
+				}
+			} else {
+				daemonize();
+			}
+		}
 		opensyslog();
 		sender(macs, rate);
 		exit(1);
