@@ -526,6 +526,10 @@ int main(int argc, char **argv)
 		mac->addr.sll_family = AF_PACKET;
 		mac->addr.sll_protocol = htons(ETH_P_ETHSPRAY); /* Must set protocol here!  else 0x0000 will be used */
 		macaddr = strchr(argv[argc-1], ':');
+		if(!macaddr) {
+			fprintf(stderr, "missing mac addr for %s\n", argv[argc-1]);
+			exit(1);
+		}
 		*macaddr = 0;
 		macaddr++;
 		device = argv[argc-1];
