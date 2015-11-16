@@ -34,10 +34,12 @@
 
 #define DELAYOK 50000000
 
+#define WINDOWSIZE 100
+
 struct mac {
 	int fd; /* socket */
 	struct sockaddr_ll addr;
-	struct timeval ts[100]; /* circular buffer */
+	struct timeval ts[WINDOWSIZE]; /* circular buffer */
 	int rate;
 	int pos; /* position in ts array */
 	int last; /* last position */
@@ -323,7 +325,7 @@ void receiver(struct jlhead *macs)
 						}
 						mac->last = mac->pos;
 						mac->pos++;
-						if(mac->pos >= 100) mac->pos = 0;
+						if(mac->pos >= WINDOWSIZE) mac->pos = 0;
 						break;
 					}
 				}
@@ -338,9 +340,9 @@ void receiver(struct jlhead *macs)
 			uint64_t pps;
 			int prevloss;
 			
-			if(mac->count < 100) continue;
+			if(mac->count < WINDOWSIZE) continue;
 			
-			first = (mac->last + 1) % 100;
+			first = (mac->last + 1) % WINDOWSIZE;
 			prevloss = mac->loss;
 			
 			/* window size in time */
@@ -353,10 +355,10 @@ void receiver(struct jlhead *macs)
 				wt += mac->ts[mac->last].tv_usec - mac->ts[first].tv_usec;
 			}
 			
-			/* nr of packets during window (99) */
+			/* nr of packets during window (WINDOWSIZE-1) */
 
-			/* pps = 99/time */
-			pps = (99*10000000)/wt;
+			/* pps = (WINDOWSIZE-1)/time */
+			pps = ((WINDOWSIZE-1)*10*1000000)/wt;
 			
 			/* loss = 1 - (pps / mac->rate) */
 			mac->loss = 100 - ((pps*10) / mac->rate);
