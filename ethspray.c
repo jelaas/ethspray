@@ -35,6 +35,7 @@
 #define DELAYOK 50000000
 
 #define WINDOWSIZE 100
+#define SCALINGFACTOR 100
 
 struct mac {
 	int fd; /* socket */
@@ -358,12 +359,16 @@ void receiver(struct jlhead *macs)
 			/* nr of packets during window (WINDOWSIZE-1) */
 
 			/* pps = (WINDOWSIZE-1)/time */
-			pps = ((WINDOWSIZE-1)*10*1000000)/wt;
+			pps = ((WINDOWSIZE-1)*SCALINGFACTOR*1000000)/wt;
 			
 			/* loss = 1 - (pps / mac->rate) */
-			mac->loss = 100 - ((pps*10) / mac->rate);
+			mac->loss = (1*SCALINGFACTOR) - (pps / mac->rate);
 			if(abs(prevloss - mac->loss) > 1) {
 				mac_loss(mac, &ts);
+			} else {
+				if( (prevloss != mac->loss) && (prevloss > 0) && (mac->loss < 1)) {
+					mac_loss(mac, &ts);
+				}
 			}
 		}
 		for(mac=jl_iter_init(&iter, macs);mac;mac=jl_iter(&iter)) {
