@@ -55,6 +55,7 @@ struct mac {
 };
 
 struct {
+	char *description;
 	int verbose;
 	int fd;
 	int nr_allow_loss;
@@ -133,7 +134,7 @@ int logmsg(struct mac *mac, char *msg, struct timeval *ts, long sleepns)
 	gmtime_r(&ts->tv_sec, &tm);
 	snprintf(ats, sizeof(ats), "%02d:%02d:%02d.%03ld", tm.tm_hour, tm.tm_min, tm.tm_sec, ts->tv_usec/1000);
 	
-	if(conf.verbose) fprintf(stderr, "%s: %s at UTC %s\n", mac?eth_ntoa(mac->addr.sll_addr):"(sender)", msg, ats);
+	if(conf.verbose) fprintf(stderr, "%s[%s]: %s at UTC %s\n", mac?eth_ntoa(mac->addr.sll_addr):"(sender)", conf.description, msg, ats);
 	
 	pid = fork();
 	if(pid == 0) {
@@ -144,7 +145,7 @@ int logmsg(struct mac *mac, char *msg, struct timeval *ts, long sleepns)
 			req.tv_nsec = sleepns;
 			nanosleep(&req, (void*)0);
 		}
-		syslog(LOG_ERR, "%s %s at UTC %s", mac?eth_ntoa(mac->addr.sll_addr):"(sender)", msg, ats);
+		syslog(LOG_ERR, "%s[%s] %s at UTC %s", mac?eth_ntoa(mac->addr.sll_addr):"(sender)", conf.description, msg, ats);
 		_exit(0);
 	}
 	return 0;
@@ -161,7 +162,7 @@ int event(struct mac *mac, char *msg, struct timeval *ts, long sleepns, char *nu
 	
 	pid = fork();
         if(pid == 0) {
-		char *argv[6];
+		char *argv[7];
                 close(conf.fd);
 		if(sleepns) {
 			struct timespec req;
@@ -173,9 +174,10 @@ int event(struct mac *mac, char *msg, struct timeval *ts, long sleepns, char *nu
 		argv[1] = eth_ntoa(mac->addr.sll_addr);
 		argv[2] = msg;
 		argv[3] = ats;
-		argv[4] = (void*)0;
-		if(number) argv[4] = number;
+		argv[4] = conf.description;
 		argv[5] = (void*)0;
+		if(number) argv[5] = number;
+		argv[6] = (void*)0;
 		execv(conf.exec, argv);
                 _exit(0);
 	}
@@ -472,6 +474,7 @@ int main(int argc, char **argv)
 	conf.facility = LOG_DAEMON;
 	conf.nr_allow_loss = 3;
 	conf.recoverytime = 200;
+	conf.description = "::";
 	
 	if(jelopt(argv, 'h', "help", 0, &err)) {
 	usage:
@@ -481,6 +484,7 @@ int main(int argc, char **argv)
 		       " -l --loss N     packet loss trigger level [3]\n"
 		       " -R --rtime N    recoverytime in seconds after reconnect until recovered [200]\n"
 		       " -F              stay in foreground (no daemon)\n"
+		       " -t TEXT         user provided description [::]\n"
 		       " -e --exec PRG   run this program to handle events\n"
 		       "\n"
 		       "Ethspray has two modes: 'rx' and 'tx'\n"
@@ -498,7 +502,8 @@ int main(int argc, char **argv)
 		       " $2 = RESET|FAIL|RECONNECT|RECOVER|LOSS\n"
 		       "      RESET is sent at program startup.\n"
 		       " $3 = HH:MM:SS.ms\n"
-		       " $4 = (LOSS PERCENTAGE)\n"
+		       " $4 = provided description (see -t)\n"
+		       " $5 = (LOSS PERCENTAGE)\n"
 			);
 		exit(0);
 	}
@@ -506,6 +511,7 @@ int main(int argc, char **argv)
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
 	while(jelopt(argv, 'F', (void*)0, 0, &err)) conf.foreground=1;
 	while(jelopt(argv, 'e', "exec", &conf.exec, &err));
+	while(jelopt(argv, 't', (void*)0, &conf.description, &err));
 	while(jelopt_int(argv, 'r', "rate", &rate, &err));
 	while(jelopt_int(argv, 'l', "loss", &conf.nr_allow_loss, &err));
 	while(jelopt_int(argv, 'R', "rtime", &conf.recoverytime, &err));
