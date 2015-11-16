@@ -359,7 +359,8 @@ void receiver(struct jlhead *macs)
 			/* nr of packets during window (WINDOWSIZE-1) */
 
 			/* pps = (WINDOWSIZE-1)/time */
-			pps = ((WINDOWSIZE-1)*SCALINGFACTOR*1000000)/wt;
+			wt = wt / SCALINGFACTOR;
+			pps = ((WINDOWSIZE-1)*1000000)/wt;
 			
 			/* loss = 1 - (pps / mac->rate) */
 			mac->loss = (1*SCALINGFACTOR) - (pps / mac->rate);
