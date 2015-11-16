@@ -130,7 +130,7 @@ int logmsg(struct mac *mac, char *msg, struct timeval *ts, long sleepns)
 	gmtime_r(&ts->tv_sec, &tm);
 	snprintf(ats, sizeof(ats), "%02d:%02d:%02d.%03ld", tm.tm_hour, tm.tm_min, tm.tm_sec, ts->tv_usec/1000);
 	
-	if(conf.verbose) fprintf(stderr, "%s: %s at UTC %s\n", eth_ntoa(mac->addr.sll_addr), msg, ats);
+	if(conf.verbose) fprintf(stderr, "%s: %s at UTC %s\n", mac?eth_ntoa(mac->addr.sll_addr):"(sender)", msg, ats);
 	
 	pid = fork();
 	if(pid == 0) {
@@ -141,7 +141,7 @@ int logmsg(struct mac *mac, char *msg, struct timeval *ts, long sleepns)
 			req.tv_nsec = sleepns;
 			nanosleep(&req, (void*)0);
 		}
-		syslog(LOG_ERR, "%s %s at UTC %s", eth_ntoa(mac->addr.sll_addr), msg, ats);
+		syslog(LOG_ERR, "%s %s at UTC %s", mac?eth_ntoa(mac->addr.sll_addr):"(sender)", msg, ats);
 		_exit(0);
 	}
 	return 0;
@@ -425,7 +425,7 @@ void sender(struct jlhead *macs, int rate)
 		if( (now.tv_sec > next.tv_sec) ||
 		    ( (now.tv_sec == next.tv_sec) && (now.tv_usec > next.tv_usec) ) ) {
 			if(conf.verbose) fprintf(stderr, "failed to keep up send rate\n");
-			logmsg(mac, "failed to keep up send rate", &now, 0);
+			logmsg((void*)0, "failed to keep up send rate", &now, 0);
 			memcpy(&next, &now, sizeof(now));
 			continue;
 		}
