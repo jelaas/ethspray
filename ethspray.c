@@ -45,6 +45,8 @@ struct mac {
 	int pos; /* position in ts array */
 	int last; /* last position */
 	int loss; /* last calculated packet loss rate in percent */
+	time_t lastlossreport; /* latest time loss report waas sent */
+	int lastloss; /* loss rate reported in last report */
 	time_t lastreport; /* latest "still failed" sent at this time */
 	uint64_t fail; /* nr of failures detected */
 	uint64_t count; /* total number of packets processed */
@@ -232,6 +234,8 @@ int mac_loss(struct mac *mac, struct timeval *ts)
 		snprintf(buf, sizeof(buf), "%d", mac->loss);
 		event(mac, "LOSS", ts, DELAYOK, buf);
 	}
+	mac->lastlossreport = ts->tv_sec;
+	mac->lastloss = mac->loss;
 	return mac->loss;
 }
 
@@ -369,7 +373,7 @@ void receiver(struct jlhead *macs)
 			if(abs(prevloss - mac->loss) > 1) {
 				mac_loss(mac, &ts);
 			} else {
-				if( (prevloss != mac->loss) && (prevloss > 0) && (mac->loss < 1)) {
+				if( (ts.tv_sec > mac->lastlossreport)&&(mac->lastloss != mac->loss) && (mac->lastloss > 0) && (mac->loss < 1)) {
 					mac_loss(mac, &ts);
 				}
 			}
