@@ -452,6 +452,10 @@ void sender(struct jlhead *macs, int rate)
 			snprintf(buf, sizeof(buf), "failed to keep up send rate: %llums overdue", ms);
 			if(conf.verbose) fprintf(stderr, "%s\n", buf);
 			logmsg((void*)0, buf, &now, 0);
+			if(conf.exec) {
+				snprintf(buf, sizeof(buf), "%llu", ms);
+				event((void*)0, "OVERDUE", &now, 0, buf);
+			}
 			memcpy(&next, &now, sizeof(now));
 			continue;
 		}
@@ -511,15 +515,16 @@ int main(int argc, char **argv)
 		       "\n"
 		       "tx mode is the transmitter mode.\n"
 		       "The transmitter will send packets to all MAC-addresses listed at the given rate.\n"
+		       "If the transmitter fails to keep up the sending rate an OVERDUE event triggers.\n"
 		       "\n"
 		       "Exec program:\n"
 		       "The program/script given to the '-e' switch receives event information in argv.\n"
 		       " $1 = MAC\n"
-		       " $2 = RESET|FAIL|RECONNECT|RECOVER|LOSS\n"
+		       " $2 = RESET|FAIL|RECONNECT|RECOVER|LOSS|OVERDUE\n"
 		       "      RESET is sent at program startup.\n"
 		       " $3 = HH:MM:SS.ms\n"
 		       " $4 = provided description (see -t)\n"
-		       " $5 = (LOSS PERCENTAGE)\n"
+		       " $5 = (LOSS PERCENTAGE|OVERDUETIME_MS)\n"
 			);
 		exit(0);
 	}
