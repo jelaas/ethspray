@@ -432,14 +432,26 @@ void sender(struct jlhead *macs, int rate)
 				if(conf.verbose) fprintf(stderr, "sendto(%d) failed: %s\n", mac->addr.sll_ifindex, strerror(errno));
 			}
 		}
-
+		
 		if(gettimeofday(&now, NULL)) {
 			if(conf.verbose) fprintf(stderr, "gettimeofday failed\n");
 		}
 		if( (now.tv_sec > next.tv_sec) ||
 		    ( (now.tv_sec == next.tv_sec) && (now.tv_usec > next.tv_usec) ) ) {
-			if(conf.verbose) fprintf(stderr, "failed to keep up send rate\n");
-			logmsg((void*)0, "failed to keep up send rate", &now, 0);
+			char buf[64];
+			uint64_t ms;
+			ms = (now.tv_sec - next.tv_sec) * 1000ULL;
+			if(now.tv_sec == next.tv_sec)
+				ms += (now.tv_usec -  next.tv_usec)/1000;
+			else {
+				if(now.tv_usec > next.tv_usec)
+					ms += (now.tv_usec -  next.tv_usec)/1000;
+				else
+					ms -= (next.tv_usec -  now.tv_usec)/1000;
+			}	
+			snprintf(buf, sizeof(buf), "failed to keep up send rate: %llums overdue", ms);
+			if(conf.verbose) fprintf(stderr, "%s\n", buf);
+			logmsg((void*)0, buf, &now, 0);
 			memcpy(&next, &now, sizeof(now));
 			continue;
 		}
