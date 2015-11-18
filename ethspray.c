@@ -173,7 +173,7 @@ int event(struct mac *mac, char *msg, struct timeval *ts, long sleepns, char *nu
 			nanosleep(&req, (void*)0);
 		}
 		argv[0] = conf.exec;
-		argv[1] = eth_ntoa(mac->addr.sll_addr);
+		argv[1] = mac?eth_ntoa(mac->addr.sll_addr):"sender";
 		argv[2] = msg;
 		argv[3] = ats;
 		argv[4] = conf.description;
