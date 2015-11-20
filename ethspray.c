@@ -48,12 +48,21 @@ struct mac {
 	time_t lastlossreport; /* latest time loss report waas sent */
 	int lastloss; /* loss rate reported in last report */
 	time_t lastreport; /* latest "still failed" sent at this time */
-	uint64_t fail; /* nr of failures detected */
 	uint64_t count; /* total number of packets processed */
+	uint64_t lastid; /* last received pkt id (senders count) */
 	struct timeval gracets; /* point in time when grace period expired */
-	struct timeval recoveryts; /* point in time for recovery event */
 	struct timeval gracetime; /* time until grace period has expired*/
-	uint8_t data[4]; /* proto, proto, rate-hi, rate-lo */
+	struct {
+		struct {
+			uint64_t count; /* nr of failures detected */
+			struct timeval recoveryts; /* point in time for recovery event */
+		} rate;
+		struct {
+			uint64_t count; /* nr of drops detected */
+			struct timeval recoveryts; /* point in time for recovery event */
+		} drop;
+	} fail;
+	uint8_t data[4+8]; /* proto, proto, rate-hi, rate-lo, count-hi .. count-lo */
 };
 
 struct {
@@ -67,6 +76,33 @@ struct {
 	char *exec;
 	int ifindex;
 } conf;
+
+int putcount(uint8_t *p, uint64_t i)
+{
+	*(p++) = (i & 0xff00000000000000) >> 56;
+	*(p++) = (i & 0xff000000000000) >> 48;
+	*(p++) = (i & 0xff0000000000) >> 40;
+	*(p++) = (i & 0xff00000000) >> 32;
+	*(p++) = (i & 0xff000000) >> 24;
+	*(p++) = (i & 0xff0000) >> 16;
+	*(p++) = (i & 0xff00) >> 8;
+	*(p++) = i & 0xff;
+	return 0;
+}
+
+uint64_t getid(uint8_t *p)
+{
+	uint64_t i;
+	i = (uint64_t)*(p++) << 56;
+	i += (uint64_t)*(p++) << 48;
+	i += (uint64_t)*(p++) << 40;
+	i += (uint64_t)*(p++) << 32;
+	i += (uint64_t)*(p++) << 24;
+	i += (uint64_t)*(p++) << 16;
+	i += (uint64_t)*(p++) << 8;
+	i += (uint64_t)*(p++);
+	return i;
+}
 
 int eth_aton(const char *str, uint8_t *maddr)
 {
@@ -186,43 +222,82 @@ int event(struct mac *mac, char *msg, struct timeval *ts, long sleepns, char *nu
         return 0;
 }
 
-int mac_status_fail(struct mac *mac, struct timeval *ts)
+int mac_rate_fail(struct mac *mac, struct timeval *ts)
 {
-	if(mac->fail == 0) {
-		logmsg(mac, "connectivity failed", ts, 0);
-		if(conf.exec) event(mac, "FAIL", ts, 0, (void*)0);
+	if(mac->fail.rate.count == 0) {
+		logmsg(mac, "rate failed", ts, 0);
+		if(conf.exec) event(mac, "RATEFAIL", ts, 0, (void*)0);
 	}
-	if(mac->fail &&
+	if(mac->fail.rate.count &&
 	   (ts->tv_sec > mac->lastreport) &&
 	   ((ts->tv_sec % (conf.recoverytime?conf.recoverytime:60)) == 0)) {
 		mac->lastreport = ts->tv_sec;
-		logmsg(mac, "connectivity still failed", ts, 0);
+		logmsg(mac, "rate still failed", ts, 0);
 	}
-	mac->fail++;
-	if(conf.verbose) fprintf(stderr, "%s: fail = %llu\n", eth_ntoa(mac->addr.sll_addr), mac->fail);
-	return mac->fail;
+	mac->fail.rate.count++;
+	if(conf.verbose) fprintf(stderr, "%s: rate fail = %llu\n", eth_ntoa(mac->addr.sll_addr), mac->fail.rate.count);
+	return mac->fail.rate.count;
 }
 
-int mac_status_ok(struct mac *mac, struct timeval *ts)
+int mac_drop_fail(struct mac *mac, struct timeval *ts)
 {
-	if(mac->fail) {
-		memcpy(&mac->recoveryts, ts, sizeof(struct timeval));
-		mac->recoveryts.tv_sec += conf.recoverytime;
-		logmsg(mac, "reconnected", ts, DELAYOK);
-		if(conf.exec) event(mac, "RECONNECT", ts, DELAYOK, (void*)0);
+	if(mac->fail.drop.count == 0) {
+		logmsg(mac, "packet drops detected", ts, 0);
+		if(conf.exec) event(mac, "DROPFAIL", ts, 0, (void*)0);
 	}
-	mac->fail = 0;
-	if(mac->recoveryts.tv_sec) {
-		if(mac->recoveryts.tv_sec < ts->tv_sec) {
-			memset(&mac->recoveryts, 0, sizeof(struct timeval));
-			if(conf.verbose) fprintf(stderr, "%s: recovered\n", eth_ntoa(mac->addr.sll_addr));
-			logmsg(mac, "connectivity recovered", ts, DELAYOK);
-			if(conf.exec) event(mac, "RECOVERED", ts, DELAYOK, (void*)0);
+	if(mac->fail.drop.count &&
+	   (ts->tv_sec > mac->lastreport) &&
+	   ((ts->tv_sec % (conf.recoverytime?conf.recoverytime:60)) == 0)) {
+		mac->lastreport = ts->tv_sec;
+		logmsg(mac, "drop still failed", ts, 0);
+	}
+	mac->fail.drop.count++;
+	if(conf.verbose) fprintf(stderr, "%s: drop fail = %llu\n", eth_ntoa(mac->addr.sll_addr), mac->fail.drop.count);
+	return mac->fail.drop.count;
+}
+
+int mac_rate_ok(struct mac *mac, struct timeval *ts)
+{
+	if(mac->fail.rate.count) {
+		memcpy(&mac->fail.rate.recoveryts, ts, sizeof(struct timeval));
+		mac->fail.rate.recoveryts.tv_sec += conf.recoverytime;
+		logmsg(mac, "rate reconnected", ts, DELAYOK);
+		if(conf.exec) event(mac, "RATERECONNECT", ts, DELAYOK, (void*)0);
+	}
+	mac->fail.rate.count = 0;
+	if(mac->fail.rate.recoveryts.tv_sec) {
+		if(mac->fail.rate.recoveryts.tv_sec < ts->tv_sec) {
+			memset(&mac->fail.rate.recoveryts, 0, sizeof(struct timeval));
+			if(conf.verbose) fprintf(stderr, "%s: rate recovered\n", eth_ntoa(mac->addr.sll_addr));
+			logmsg(mac, "rate connectivity recovered", ts, DELAYOK);
+			if(conf.exec) event(mac, "RATERECOVERED", ts, DELAYOK, (void*)0);
 		}
 	}
-	if(conf.verbose > 1) fprintf(stderr, "%s: fail = %llu recover=%lu\n",
-				 eth_ntoa(mac->addr.sll_addr), mac->fail, mac->recoveryts.tv_sec);
-	return mac->fail;
+	if(conf.verbose > 1) fprintf(stderr, "%s: rate fail = %llu recover=%lu\n",
+				 eth_ntoa(mac->addr.sll_addr), mac->fail.rate.count, mac->fail.rate.recoveryts.tv_sec);
+	return mac->fail.rate.count;
+}
+
+int mac_drop_ok(struct mac *mac, struct timeval *ts)
+{
+	if(mac->fail.drop.count) {
+		memcpy(&mac->fail.drop.recoveryts, ts, sizeof(struct timeval));
+		mac->fail.drop.recoveryts.tv_sec += conf.recoverytime;
+		logmsg(mac, "drop reconnected", ts, DELAYOK);
+		if(conf.exec) event(mac, "DROPRECONNECT", ts, DELAYOK, (void*)0);
+	}
+	mac->fail.drop.count = 0;
+	if(mac->fail.drop.recoveryts.tv_sec) {
+		if(mac->fail.drop.recoveryts.tv_sec < ts->tv_sec) {
+			memset(&mac->fail.drop.recoveryts, 0, sizeof(struct timeval));
+			if(conf.verbose) fprintf(stderr, "%s: drop recovered\n", eth_ntoa(mac->addr.sll_addr));
+			logmsg(mac, "drop connectivity recovered", ts, DELAYOK);
+			if(conf.exec) event(mac, "DROPRECOVERED", ts, DELAYOK, (void*)0);
+		}
+	}
+	if(conf.verbose > 1) fprintf(stderr, "%s: drop fail = %llu recover=%lu\n",
+				 eth_ntoa(mac->addr.sll_addr), mac->fail.drop.count, mac->fail.drop.recoveryts.tv_sec);
+	return mac->fail.drop.count;
 }
 
 int mac_loss(struct mac *mac, struct timeval *ts)
@@ -239,6 +314,18 @@ int mac_loss(struct mac *mac, struct timeval *ts)
 	return mac->loss;
 }
 
+int mac_drop(struct mac *mac, struct timeval *ts, int n)
+{
+	char buf[32];
+	snprintf(buf, sizeof(buf), "packet drops %2d", n);
+	logmsg(mac, buf, ts, 0);
+	if(conf.exec) {
+		snprintf(buf, sizeof(buf), "%d", n);
+		event(mac, "DROP", ts, 0, buf);
+	}
+	return n;
+}
+
 void receiver(struct jlhead *macs)
 {
 	struct pollfd *fds;
@@ -249,7 +336,7 @@ void receiver(struct jlhead *macs)
 	struct timeval ts;
 	int got, rc, i;
 	int polltimeout = 500;		
-	uint8_t buf[14+4];
+	uint8_t buf[14+4+8];
 
 	fds = malloc(sizeof(struct pollfd)*(macs->len + 1));
 	
@@ -276,7 +363,7 @@ void receiver(struct jlhead *macs)
 			uint64_t gracetime;
 
 			/* only consider non-failed macs */
-			if(mac->fail) continue;
+			if(mac->fail.rate.count) continue;
 
 			/* gracets - now */
 			mac->gracetime.tv_sec = mac->gracets.tv_sec;
@@ -304,7 +391,7 @@ void receiver(struct jlhead *macs)
 				if( fds[i].revents == 0) continue;
 				got = recvfrom( fds[i].fd, buf, sizeof(buf), 0,
 						(struct sockaddr *)&from_addr, &fromlen);
-				if(got < 18) continue;
+				if(got < (18+8)) continue;
 				gettimeofday(&ts, NULL);
 				if(conf.verbose > 2) printf("got packet from %s [len %d]\n",
 							eth_ntoa(from_addr.sll_addr), got);
@@ -329,6 +416,17 @@ void receiver(struct jlhead *macs)
 								mac->gracets.tv_usec -= 1000000;
 								mac->gracets.tv_sec++;
 							}
+						}
+						{
+							uint64_t id;
+							id = getid(buf+18);
+							if(mac->lastid && (id != mac->lastid+1)) {
+								mac_drop(mac, &ts, id - mac->lastid - 1);
+								mac_drop_fail(mac, &ts);
+							} else {
+								mac_drop_ok(mac, &ts);
+							}
+							mac->lastid = id;
 						}
 						mac->last = mac->pos;
 						mac->pos++;
@@ -380,7 +478,7 @@ void receiver(struct jlhead *macs)
 		}
 		for(mac=jl_iter_init(&iter, macs);mac;mac=jl_iter(&iter)) {
 			if(mac->count == 0) {
-				mac_status_fail(mac, &ts);
+				mac_rate_fail(mac, &ts);
 				continue;
 			}
 			
@@ -388,18 +486,18 @@ void receiver(struct jlhead *macs)
 			 * have we reach gracets?
 			 */
 			if(mac->gracets.tv_sec > ts.tv_sec) {
-				mac_status_ok(mac, &ts);
+				mac_rate_ok(mac, &ts);
 				continue;
 			}
 			if(mac->gracets.tv_sec < ts.tv_sec) {
-				mac_status_fail(mac, &ts);
+				mac_rate_fail(mac, &ts);
 				continue;
 				}
 			if(mac->gracets.tv_usec < ts.tv_usec) {
-				mac_status_fail(mac, &ts);
+				mac_rate_fail(mac, &ts);
 				continue;
 			}
-			mac_status_ok(mac, &ts);
+			mac_rate_ok(mac, &ts);
 		}
 	}
 }
@@ -424,7 +522,8 @@ void sender(struct jlhead *macs, int rate)
 			next.tv_usec -= (uint64_t)1000000;
 		}
 		jl_foreach(macs, mac) {
-			rc = sendto( conf.fd, mac->data, 4, 0,
+			putcount(mac->data + 4, mac->count);
+			rc = sendto( conf.fd, mac->data, 4+8, 0,
 				     (struct sockaddr *)&mac->addr, sizeof(struct sockaddr_ll));
 			if(rc >= 0)
 				mac->count++;
@@ -501,7 +600,7 @@ int main(int argc, char **argv)
 		printf("ethspray [-v] rx|tx DEV:MAC [DEV:MAC]*\n"
 		       " -v              be verbose (also keeps process in foreground)\n"
 		       " -r --rate       packets per second [10]\n"
-		       " -l --loss N     packet loss trigger level [3]\n"
+		       " -l --loss N     packet rate loss trigger level [3]\n"
 		       " -R --rtime N    recoverytime in seconds after reconnect until recovered [200]\n"
 		       " -F              stay in foreground (no daemon)\n"
 		       " -t TEXT         user provided description [::]\n"
@@ -512,6 +611,8 @@ int main(int argc, char **argv)
 		       "rx mode is the receiver mode.\n"
 		       "The receiver will expect packets from the MAC-addresses listed.\n"
 		       "If sequential packet loss is detected the alarm function will trigger.\n"
+		       "If reception rate drops below 'rate' (pkts/second), a RATEFAIL event is triggered.\n"
+		       "If gaps in the packet sequence is detected (packets missing), a DROPFAIL event is triggered.\n"
 		       "\n"
 		       "tx mode is the transmitter mode.\n"
 		       "The transmitter will send packets to all MAC-addresses listed at the given rate.\n"
@@ -520,11 +621,13 @@ int main(int argc, char **argv)
 		       "Exec program:\n"
 		       "The program/script given to the '-e' switch receives event information in argv.\n"
 		       " $1 = MAC\n"
-		       " $2 = RESET|FAIL|RECONNECT|RECOVER|LOSS|OVERDUE\n"
+		       " $2 = RATEFAIL|RATERECONNECT|RATERECOVER|\n"
+		       "      DROPFAIL|DROPRECONNECT|DROPRECOVER|\n"
+		       "      RESET|LOSS|OVERDUE|DROP\n"
 		       "      RESET is sent at program startup.\n"
 		       " $3 = HH:MM:SS.ms\n"
 		       " $4 = provided description (see -t)\n"
-		       " $5 = (LOSS PERCENTAGE|OVERDUETIME_MS)\n"
+		       " $5 = (LOSS PERCENTAGE|OVERDUETIME_MS|DROPPPED_PKTS)\n"
 			);
 		exit(0);
 	}
