@@ -317,6 +317,7 @@ int mac_loss(struct mac *mac, struct timeval *ts)
 int mac_drop(struct mac *mac, struct timeval *ts, int n)
 {
 	char buf[32];
+	if(n < -100) n=-100;
 	snprintf(buf, sizeof(buf), "packet drops %2d", n);
 	logmsg(mac, buf, ts, 0);
 	if(conf.exec) {
