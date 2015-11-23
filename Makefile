@@ -8,4 +8,4 @@ clean:
 	rm -f *.o ethspray ethsprayd
 rpm:	ethspray ethsprayd
 	strip ethspray ethsprayd
-	bar -c --license=GPLv2+ --name ethspray ethspray-1.7-1.rpm --prefix=/usr/bin --fuser=root --fgroup=root --version=1.7 --release=1 ethspray ethsprayd
+	bar -c --license=GPLv2+ --name ethspray ethspray-1.8-1.rpm --prefix=/usr/bin --fuser=root --fgroup=root --version=1.8 --release=1 ethspray ethsprayd
